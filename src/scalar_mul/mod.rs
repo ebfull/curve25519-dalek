@@ -12,10 +12,17 @@
 
 use core::borrow::Borrow;
 
+use clear_on_drop::ClearOnDrop;
+
+use curve_models::{AffineNielsPoint, ProjectiveNielsPoint};
+use curve_models::{CompletedPoint, ProjectivePoint};
 use edwards::EdwardsPoint;
 use scalar::Scalar;
+use scalar_mul::window::{LookupTable, NafLookupTable5, NafLookupTable8};
+use traits::Identity;
 use traits::MultiscalarMul;
 use traits::VartimeMultiscalarMul;
+use traits::PrecomputedMultiscalarMul;
 
 pub mod window;
 
@@ -109,12 +116,6 @@ impl MultiscalarMul for Straus {
         J: IntoIterator,
         J::Item: Borrow<EdwardsPoint>,
     {
-        use clear_on_drop::ClearOnDrop;
-
-        use curve_models::ProjectiveNielsPoint;
-        use scalar_mul::window::LookupTable;
-        use traits::Identity;
-
         let lookup_tables: Vec<_> = points
             .into_iter()
             .map(|point| LookupTable::<ProjectiveNielsPoint>::from(point.borrow()))
@@ -164,10 +165,6 @@ impl VartimeMultiscalarMul for Straus {
         J: IntoIterator,
         J::Item: Borrow<EdwardsPoint>,
     {
-        use curve_models::{CompletedPoint, ProjectiveNielsPoint, ProjectivePoint};
-        use scalar_mul::window::NafLookupTable5;
-        use traits::Identity;
-
         let nafs: Vec<_> = scalars
             .into_iter()
             .map(|c| c.borrow().non_adjacent_form(5))
@@ -194,5 +191,90 @@ impl VartimeMultiscalarMul for Straus {
         }
 
         r.to_extended()
+    }
+}
+
+pub struct PrecomputedStraus {
+    lookup_tables: Vec<LookupTable<AffineNielsPoint>>,
+}
+
+#[cfg(any(feature = "alloc", feature = "std"))]
+impl PrecomputedMultiscalarMul for PrecomputedStraus {
+    type Point = EdwardsPoint;
+
+    fn new<I>(static_points: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: Borrow<Self::Point>,
+    {
+        PrecomputedStraus {
+            lookup_tables: static_points
+                .into_iter()
+                .map(|point| LookupTable::<AffineNielsPoint>::from(point.borrow()))
+                .collect(),
+        }
+    }
+
+    fn mixed_multiscalar_mul<I, J, K>(
+        &self,
+        static_scalars: I,
+        dynamic_scalars: J,
+        dynamic_points: K,
+    ) -> Self::Point
+    where
+        I: IntoIterator,
+        I::Item: Borrow<Scalar>,
+        J: IntoIterator,
+        J::Item: Borrow<Scalar>,
+        K: IntoIterator,
+        K::Item: Borrow<Self::Point>,
+    {
+        // Compute the scalar digits for the static and dynamic scalars.
+        // To ensure that these are erased, pass ownership of the Vec into a
+        // ClearOnDrop wrapper.
+
+        let static_scalar_digits_vec: Vec<_> = static_scalars
+            .into_iter()
+            .map(|s| s.borrow().to_radix_16())
+            .collect();
+        let static_scalar_digits = ClearOnDrop::new(static_scalar_digits_vec);
+
+        let dynamic_scalar_digits_vec: Vec<_> = dynamic_scalars
+            .into_iter()
+            .map(|s| s.borrow().to_radix_16())
+            .collect();
+        let dynamic_scalar_digits = ClearOnDrop::new(dynamic_scalar_digits_vec);
+
+        let dynamic_lookup_tables: Vec<_> = dynamic_points
+            .into_iter()
+            .map(|point| LookupTable::<ProjectiveNielsPoint>::from(point.borrow()))
+            .collect();
+
+        let mut Q = EdwardsPoint::identity();
+        for j in (0..64).rev() {
+            Q = Q.mul_by_pow_2(4);
+
+            // Add the static points
+            let it = static_scalar_digits.iter().zip(self.lookup_tables.iter());
+            for (s_i, lookup_table_i) in it {
+                // R_i = s_{i,j} * P_i
+                let R_i = lookup_table_i.select(s_i[j]);
+                // Q = Q + R_i
+                Q = (&Q + &R_i).to_extended();
+            }
+
+            // Add the dynamic points
+            let it = dynamic_scalar_digits
+                .iter()
+                .zip(dynamic_lookup_tables.iter());
+            for (s_i, lookup_table_i) in it {
+                // R_i = s_{i,j} * P_i
+                let R_i = lookup_table_i.select(s_i[j]);
+                // Q = Q + R_i
+                Q = (&Q + &R_i).to_extended();
+            }
+        }
+
+        Q
     }
 }
