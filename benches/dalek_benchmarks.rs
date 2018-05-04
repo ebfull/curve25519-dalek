@@ -63,6 +63,25 @@ mod edwards_benches {
         });
     }
 
+    criterion_group!{
+        name = edwards_benches;
+        config = Criterion::default();
+        targets =
+        compress,
+        decompress,
+        consttime_fixed_base_scalar_mul,
+        consttime_variable_base_scalar_mul,
+        vartime_double_base_scalar_mul,
+    }
+}
+
+mod multiscalar_benches {
+    use super::*;
+    use curve25519_dalek::edwards;
+    use curve25519_dalek::edwards::EdwardsPoint;
+    use curve25519_dalek::traits::MultiscalarMul;
+    use curve25519_dalek::traits::VartimeMultiscalarMul;
+
     fn consttime_multiscalar_mul(c: &mut Criterion) {
         c.bench_function_over_inputs(
             "Constant-time variable-base multiscalar multiplication",
@@ -95,17 +114,76 @@ mod edwards_benches {
         );
     }
 
+    fn precomputed_consttime_multiscalar_mul_helper(c: &mut Criterion, dynamic_fraction: f64) {
+        let label = format!(
+            "Constant-time multiscalar mul with (1x,{:.2}x) static/dynamic ratio",
+            dynamic_fraction
+        );
+        c.bench_function_over_inputs(
+            &label,
+            move |b, &&static_size| {
+                let mut rng = OsRng::new().unwrap();
+
+                let dynamic_size = ((static_size as f64) * dynamic_fraction) as usize;
+
+                let static_scalars: Vec<Scalar> =
+                    (0..static_size).map(|_| Scalar::random(&mut rng)).collect();
+
+                let static_points: Vec<EdwardsPoint> = static_scalars
+                    .iter()
+                    .map(|s| s * &constants::ED25519_BASEPOINT_TABLE)
+                    .collect();
+
+                let dynamic_scalars: Vec<Scalar> = (0..dynamic_size)
+                    .map(|_| Scalar::random(&mut rng))
+                    .collect();
+
+                let dynamic_points: Vec<EdwardsPoint> = dynamic_scalars
+                    .iter()
+                    .map(|s| s * &constants::ED25519_BASEPOINT_TABLE)
+                    .collect();
+
+                use curve25519_dalek::edwards::PrecomputedStraus;
+                use curve25519_dalek::traits::PrecomputedMultiscalarMul;
+
+                let precomp = PrecomputedStraus::new(&static_points);
+
+                let precomp_ref = &precomp;
+
+                b.iter(|| {
+                    precomp_ref.mixed_multiscalar_mul(
+                        &static_scalars,
+                        &dynamic_scalars,
+                        &dynamic_points,
+                    )
+                });
+            },
+            &MULTISCALAR_SIZES,
+        );
+    }
+
+    fn precomputed_consttime_multiscalar_mul_0_0x(c: &mut Criterion) {
+        precomputed_consttime_multiscalar_mul_helper(c, 0.0);
+    }
+
+    fn precomputed_consttime_multiscalar_mul_0_2x(c: &mut Criterion) {
+        precomputed_consttime_multiscalar_mul_helper(c, 0.2);
+    }
+
+    fn precomputed_consttime_multiscalar_mul_1_0x(c: &mut Criterion) {
+        precomputed_consttime_multiscalar_mul_helper(c, 1.0);
+    }
+
     criterion_group!{
-        name = edwards_benches;
-        config = Criterion::default();
+        name = multiscalar_benches;
+        // Lower the sample size to run the benchmarks faster
+        config = Criterion::default().sample_size(15);
         targets =
-        compress,
-        decompress,
-        consttime_fixed_base_scalar_mul,
-        consttime_variable_base_scalar_mul,
-        vartime_double_base_scalar_mul,
         consttime_multiscalar_mul,
         vartime_multiscalar_mul,
+        precomputed_consttime_multiscalar_mul_0_0x,
+        precomputed_consttime_multiscalar_mul_0_2x,
+        precomputed_consttime_multiscalar_mul_1_0x,
     }
 }
 
@@ -208,4 +286,5 @@ criterion_main!(
     montgomery_benches::montgomery_benches,
     ristretto_benches::ristretto_benches,
     edwards_benches::edwards_benches,
+    multiscalar_benches::multiscalar_benches,
 );

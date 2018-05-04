@@ -523,6 +523,9 @@ impl<'a, 'b> Mul<&'b EdwardsPoint> for &'a Scalar {
 // Multiscalar Multiplication impls
 // ------------------------------------------------------------------------
 
+// XXX replace this with a facade struct ??
+pub use scalar_mul::PrecomputedStraus;
+
 // These use the iterator's size hint and the target settings to
 // forward to a specific backend implementation.
 
