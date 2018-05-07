@@ -115,16 +115,21 @@ mod multiscalar_benches {
     }
 
     fn precomputed_consttime_multiscalar_mul_helper(c: &mut Criterion, dynamic_fraction: f64) {
+        assert!(dynamic_fraction < 1.0);
+
         let label = format!(
-            "Constant-time multiscalar mul with (1x,{:.2}x) static/dynamic ratio",
-            dynamic_fraction
+            "Constant-time multiscalar mul with ({:.2}x,{:.2}x) static/dynamic ratio",
+            1.0 - dynamic_fraction,
+            dynamic_fraction,
         );
+
         c.bench_function_over_inputs(
             &label,
-            move |b, &&static_size| {
+            move |b, &&total_size| {
                 let mut rng = OsRng::new().unwrap();
 
-                let dynamic_size = ((static_size as f64) * dynamic_fraction) as usize;
+                let dynamic_size = ((total_size as f64) * dynamic_fraction) as usize;
+                let static_size = total_size - dynamic_size;
 
                 let static_scalars: Vec<Scalar> =
                     (0..static_size).map(|_| Scalar::random(&mut rng)).collect();
@@ -168,21 +173,26 @@ mod multiscalar_benches {
         precomputed_consttime_multiscalar_mul_helper(c, 0.2);
     }
 
-    fn precomputed_consttime_multiscalar_mul_1_0x(c: &mut Criterion) {
-        precomputed_consttime_multiscalar_mul_helper(c, 1.0);
+    fn precomputed_consttime_multiscalar_mul_0_5x(c: &mut Criterion) {
+        precomputed_consttime_multiscalar_mul_helper(c, 0.5);
     }
 
     fn precomputed_vartime_multiscalar_mul_helper(c: &mut Criterion, dynamic_fraction: f64) {
+        assert!(dynamic_fraction < 1.0);
+
         let label = format!(
-            "Variable-time multiscalar mul with (1x,{:.2}x) static/dynamic ratio",
-            dynamic_fraction
+            "Variable-time multiscalar mul with ({:.2}x,{:.2}x) static/dynamic ratio",
+            1.0 - dynamic_fraction,
+            dynamic_fraction,
         );
+
         c.bench_function_over_inputs(
             &label,
-            move |b, &&static_size| {
+            move |b, &&total_size| {
                 let mut rng = OsRng::new().unwrap();
 
-                let dynamic_size = ((static_size as f64) * dynamic_fraction) as usize;
+                let dynamic_size = ((total_size as f64) * dynamic_fraction) as usize;
+                let static_size = total_size - dynamic_size;
 
                 let static_scalars: Vec<Scalar> =
                     (0..static_size).map(|_| Scalar::random(&mut rng)).collect();
@@ -226,8 +236,8 @@ mod multiscalar_benches {
         precomputed_vartime_multiscalar_mul_helper(c, 0.2);
     }
 
-    fn precomputed_vartime_multiscalar_mul_1_0x(c: &mut Criterion) {
-        precomputed_vartime_multiscalar_mul_helper(c, 1.0);
+    fn precomputed_vartime_multiscalar_mul_0_5x(c: &mut Criterion) {
+        precomputed_vartime_multiscalar_mul_helper(c, 0.5);
     }
 
     criterion_group!{
@@ -239,10 +249,10 @@ mod multiscalar_benches {
         vartime_multiscalar_mul,
         precomputed_consttime_multiscalar_mul_0_0x,
         precomputed_consttime_multiscalar_mul_0_2x,
-        precomputed_consttime_multiscalar_mul_1_0x,
+        precomputed_consttime_multiscalar_mul_0_5x,
         precomputed_vartime_multiscalar_mul_0_0x,
         precomputed_vartime_multiscalar_mul_0_2x,
-        precomputed_vartime_multiscalar_mul_1_0x,
+        precomputed_vartime_multiscalar_mul_0_5x,
     }
 }
 
