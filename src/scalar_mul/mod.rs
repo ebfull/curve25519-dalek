@@ -21,8 +21,9 @@ use scalar::Scalar;
 use scalar_mul::window::{LookupTable, NafLookupTable5, NafLookupTable8};
 use traits::Identity;
 use traits::MultiscalarMul;
-use traits::VartimeMultiscalarMul;
 use traits::PrecomputedMultiscalarMul;
+use traits::VartimeMultiscalarMul;
+use traits::VartimePrecomputedMultiscalarMul;
 
 pub mod window;
 
@@ -276,5 +277,87 @@ impl PrecomputedMultiscalarMul for PrecomputedStraus {
         }
 
         Q
+    }
+}
+
+pub struct VartimePrecomputedStraus {
+    lookup_tables: Vec<NafLookupTable8<AffineNielsPoint>>,
+}
+
+#[cfg(any(feature = "alloc", feature = "std"))]
+impl VartimePrecomputedMultiscalarMul for VartimePrecomputedStraus {
+    type Point = EdwardsPoint;
+
+    fn new<I>(static_points: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: Borrow<Self::Point>,
+    {
+        VartimePrecomputedStraus {
+            lookup_tables: static_points
+                .into_iter()
+                .map(|point| NafLookupTable8::<AffineNielsPoint>::from(point.borrow()))
+                .collect(),
+        }
+    }
+
+    fn vartime_mixed_multiscalar_mul<I, J, K>(
+        &self,
+        static_scalars: I,
+        dynamic_scalars: J,
+        dynamic_points: K,
+    ) -> Self::Point
+    where
+        I: IntoIterator,
+        I::Item: Borrow<Scalar>,
+        J: IntoIterator,
+        J::Item: Borrow<Scalar>,
+        K: IntoIterator,
+        K::Item: Borrow<Self::Point>,
+    {
+        let static_scalar_nafs: Vec<_> = static_scalars
+            .into_iter()
+            .map(|c| c.borrow().non_adjacent_form(8))
+            .collect();
+
+        let dynamic_scalar_nafs: Vec<_> = dynamic_scalars
+            .into_iter()
+            .map(|c| c.borrow().non_adjacent_form(5))
+            .collect();
+
+        let dynamic_lookup_tables: Vec<_> = dynamic_points
+            .into_iter()
+            .map(|P| NafLookupTable5::<ProjectiveNielsPoint>::from(P.borrow()))
+            .collect();
+
+        let mut r = ProjectivePoint::identity();
+
+        for i in (0..255).rev() {
+            let mut t: CompletedPoint = r.double();
+
+            // Static points use width-8 NAFs
+            let it = static_scalar_nafs.iter().zip(self.lookup_tables.iter());
+            for (naf, lookup_table) in it {
+                if naf[i] > 0 {
+                    t = &t.to_extended() + &lookup_table.select(naf[i] as usize);
+                } else if naf[i] < 0 {
+                    t = &t.to_extended() - &lookup_table.select(-naf[i] as usize);
+                }
+            }
+
+            // Dynamic points use width-5 NAFs
+            let it = dynamic_scalar_nafs.iter().zip(dynamic_lookup_tables.iter());
+            for (naf, lookup_table) in it {
+                if naf[i] > 0 {
+                    t = &t.to_extended() + &lookup_table.select(naf[i] as usize);
+                } else if naf[i] < 0 {
+                    t = &t.to_extended() - &lookup_table.select(-naf[i] as usize);
+                }
+            }
+
+            r = t.to_projective();
+        }
+
+        r.to_extended()
     }
 }

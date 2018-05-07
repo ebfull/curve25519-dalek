@@ -525,6 +525,7 @@ impl<'a, 'b> Mul<&'b EdwardsPoint> for &'a Scalar {
 
 // XXX replace this with a facade struct ??
 pub use scalar_mul::PrecomputedStraus;
+pub use scalar_mul::VartimePrecomputedStraus;
 
 // These use the iterator's size hint and the target settings to
 // forward to a specific backend implementation.

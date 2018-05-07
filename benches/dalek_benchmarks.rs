@@ -148,10 +148,8 @@ mod multiscalar_benches {
 
                 let precomp = PrecomputedStraus::new(&static_points);
 
-                let precomp_ref = &precomp;
-
                 b.iter(|| {
-                    precomp_ref.mixed_multiscalar_mul(
+                    precomp.mixed_multiscalar_mul(
                         &static_scalars,
                         &dynamic_scalars,
                         &dynamic_points,
@@ -174,6 +172,64 @@ mod multiscalar_benches {
         precomputed_consttime_multiscalar_mul_helper(c, 1.0);
     }
 
+    fn precomputed_vartime_multiscalar_mul_helper(c: &mut Criterion, dynamic_fraction: f64) {
+        let label = format!(
+            "Variable-time multiscalar mul with (1x,{:.2}x) static/dynamic ratio",
+            dynamic_fraction
+        );
+        c.bench_function_over_inputs(
+            &label,
+            move |b, &&static_size| {
+                let mut rng = OsRng::new().unwrap();
+
+                let dynamic_size = ((static_size as f64) * dynamic_fraction) as usize;
+
+                let static_scalars: Vec<Scalar> =
+                    (0..static_size).map(|_| Scalar::random(&mut rng)).collect();
+
+                let static_points: Vec<EdwardsPoint> = static_scalars
+                    .iter()
+                    .map(|s| s * &constants::ED25519_BASEPOINT_TABLE)
+                    .collect();
+
+                let dynamic_scalars: Vec<Scalar> = (0..dynamic_size)
+                    .map(|_| Scalar::random(&mut rng))
+                    .collect();
+
+                let dynamic_points: Vec<EdwardsPoint> = dynamic_scalars
+                    .iter()
+                    .map(|s| s * &constants::ED25519_BASEPOINT_TABLE)
+                    .collect();
+
+                use curve25519_dalek::edwards::VartimePrecomputedStraus;
+                use curve25519_dalek::traits::VartimePrecomputedMultiscalarMul;
+
+                let precomp = VartimePrecomputedStraus::new(&static_points);
+
+                b.iter(|| {
+                    precomp.vartime_mixed_multiscalar_mul(
+                        &static_scalars,
+                        &dynamic_scalars,
+                        &dynamic_points,
+                    )
+                });
+            },
+            &MULTISCALAR_SIZES,
+        );
+    }
+
+    fn precomputed_vartime_multiscalar_mul_0_0x(c: &mut Criterion) {
+        precomputed_vartime_multiscalar_mul_helper(c, 0.0);
+    }
+
+    fn precomputed_vartime_multiscalar_mul_0_2x(c: &mut Criterion) {
+        precomputed_vartime_multiscalar_mul_helper(c, 0.2);
+    }
+
+    fn precomputed_vartime_multiscalar_mul_1_0x(c: &mut Criterion) {
+        precomputed_vartime_multiscalar_mul_helper(c, 1.0);
+    }
+
     criterion_group!{
         name = multiscalar_benches;
         // Lower the sample size to run the benchmarks faster
@@ -184,6 +240,9 @@ mod multiscalar_benches {
         precomputed_consttime_multiscalar_mul_0_0x,
         precomputed_consttime_multiscalar_mul_0_2x,
         precomputed_consttime_multiscalar_mul_1_0x,
+        precomputed_vartime_multiscalar_mul_0_0x,
+        precomputed_vartime_multiscalar_mul_0_2x,
+        precomputed_vartime_multiscalar_mul_1_0x,
     }
 }
 
