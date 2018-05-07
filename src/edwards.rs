@@ -524,7 +524,13 @@ impl<'a, 'b> Mul<&'b EdwardsPoint> for &'a Scalar {
 // ------------------------------------------------------------------------
 
 // XXX replace this with a facade struct ??
+#[cfg(all(feature = "nightly", all(feature = "avx2_backend", target_feature = "avx2")))]
+pub use backend::avx2::scalar_mul::PrecomputedStraus;
+#[cfg(all(feature = "nightly", all(feature = "avx2_backend", target_feature = "avx2")))]
+pub use backend::avx2::scalar_mul::VartimePrecomputedStraus;
+#[cfg(not(all(feature = "nightly", all(feature = "avx2_backend", target_feature = "avx2"))))]
 pub use scalar_mul::PrecomputedStraus;
+#[cfg(not(all(feature = "nightly", all(feature = "avx2_backend", target_feature = "avx2"))))]
 pub use scalar_mul::VartimePrecomputedStraus;
 
 // These use the iterator's size hint and the target settings to
